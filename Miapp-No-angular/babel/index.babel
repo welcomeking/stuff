@@ -1,0 +1,564 @@
+var App = React.createClass({
+    getInitialState: function() {
+       return {
+           soundCloudId: "eb48d835e7bcd8ca768bc44c247d0782",
+           showSearch: false,
+           showSettings: false,
+           showFavorites: false,
+           showQueue: false,
+           currentSong: {},
+           userFavorites: [],
+           recentlyPlayed: [],
+           queue: [],
+           isPlaying: false
+       }  
+    },
+    componentDidMount: function() {
+        // Soundcloud SDK
+        this.initializeSoundcloudSDK();
+        
+         /////////////////////////////////////
+        // Audio context + Analyzer setup    //
+        /////////////////////////////////////
+        var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        var audioElement = document.getElementById('audioElement');
+            audioElement.crossOrigin = "anonymous";
+        var audioSrc = audioCtx.createMediaElementSource(audioElement);
+        var analyser = audioCtx.createAnalyser();
+
+        // Bind our analyser to the media element source.
+        audioSrc.connect(analyser);
+        audioSrc.connect(audioCtx.destination);
+        
+         // Sound wave data
+        var frequencyData = new Uint8Array(600);
+        var timeData = new Uint8Array(600);
+
+        // Get the average frequency amplitudes
+        function getAverageVolume(array) {
+            var values = 0;
+            var average;
+
+            var length = array.length;
+
+            // get all the frequency amplitudes
+            for (var i = 0; i < length; i++) {
+                values += array[i];
+            }
+
+            average = values / length;
+            return average;
+        }
+
+    /////////////////////////
+    // Playback Controls    //
+    ////////////////////////
+    var play = document.getElementById("play"),
+        pause = document.getElementById("pause"),
+        scrubber = document.getElementById("seek"),
+        loading = document.getElementById("loading"),
+        curTimeContainer = document.getElementById("current-time"),
+        durationContainer = document.getElementById("duration"),
+        duration = audioElement.duration,
+        currentTime = 0;
+
+    var that = this;
+    // Play the song
+    play.addEventListener('click', function() {
+      audioElement.play();
+      // Set scrub length
+      scrubber.max = audioElement.duration;
+        that.setState({isPlaying: true});
+    });
+
+    // Pause Song
+    pause.addEventListener('click', function() {
+      audioElement.pause();
+        that.setState({isPlaying: false});
+    });
+
+    //////////////////
+    // Scrubbing     //
+    //////////////////
+
+    // Set scrub length
+    audioElement.onplaying = function() {
+          scrubber.max = audioElement.duration;
+    }
+
+    // Update playback when user changes srubbing
+    scrubber.onchange = function() {
+      audioElement.currentTime = scrubber.value;
+      scrubber.max = audioElement.duration;
+    }
+
+    //////////////////
+    // Playback     //
+    //////////////////
+
+    // Allow for HHMMSS time formatting
+    String.prototype.toMMSS = function () {
+      var sec_num = parseInt(this, 10); // don't forget the second param
+      var hours   = Math.floor(sec_num / 3600);
+      var minutes = Math.floor((sec_num - (hours * 3600)) / 60);
+      var seconds = sec_num - (hours * 3600) - (minutes * 60);
+
+      if (minutes < 10) {minutes = "0"+minutes;}
+      if (seconds < 10) {seconds = "0"+seconds;}
+      var time    = minutes+':'+seconds;
+      return time;
+    }
+
+    // While Playing
+    audioElement.addEventListener('timeupdate', function (){
+      // Update Scrubber
+      var curtime = parseInt(audioElement.currentTime, 10);
+      scrubber.value = curtime;
+
+      // Update track time
+      var curTimeFormatted = curtime.toString().toMMSS(),
+          durationFormatted = audioElement.duration.toString().toMMSS();
+      
+      durationContainer.innerHTML = durationFormatted;     
+      curTimeContainer.innerHTML = curTimeFormatted;
+    });
+
+    // Buffering
+    audioElement.addEventListener('waiting', function(){
+      loading.style.display = "block";
+    });
+
+    // Playing
+    audioElement.addEventListener('playing', function(){
+      loading.style.display = "none";
+      play.style.display = "none";
+      pause.style.display = "block";
+    });
+
+     audioElement.addEventListener('pause', function(){
+      play.style.display = "block";
+      pause.style.display = "none";
+    });
+
+    /////////////////////////
+    // Frequecy bar SVG     //
+    /////////////////////////
+    var svgHeight = '1200';
+    var svgWidth = window.innerWidth;
+    var barPadding = '1';
+
+    function createSvg(parent, height, width) {
+      return d3.select(parent).append('svg').attr('height', height).attr('width', width);
+    }
+
+    var svg = createSvg('#graph', svgHeight, svgWidth);
+
+    // Create our initial D3 chart.
+    svg.selectAll('rect')
+       .data(frequencyData)
+       .enter()
+       .append('rect')
+       .attr('x', function (d, i) {
+          return i * (svgWidth / timeData.length);
+       })
+       .attr('width', svgWidth / timeData.length - barPadding)
+       .attr('fill', function(d) {
+           return '#52B6D2';
+        });;
+
+    // Change the frequency bar colors
+    document.getElementById("blue-freq-bars").addEventListener("click", function() {
+       svg.selectAll('rect')        
+                .attr('fill', function(d) {
+                   return '#52B6D2';
+                });
+    });
+
+    document.getElementById("white-freq-bars").addEventListener("click", function() {
+       svg.selectAll('rect')        
+                .attr('fill', function(d) {
+                   return '#fff';
+                });
+    });
+
+    document.getElementById("black-freq-bars").addEventListener("click", function() {
+       svg.selectAll('rect')        
+                .attr('fill', function(d) {
+                   return '#000';
+                });
+    });
+
+
+    // Continuously loop and update chart with frequency data.
+    var barsType = frequencyData;
+    function renderChart() {
+       requestAnimationFrame(renderChart);
+       // Reset art levels
+       document.getElementById("album-art").style.webkitFilter = "blur(0px)";
+       document.getElementById("album-art").style.filter = "blur(0px)";
+
+       // Copy frequency data to frequencyData array.
+
+       analyser.getByteFrequencyData(frequencyData);
+       analyser.getByteTimeDomainData(timeData);
+
+       // Get the average level
+       var average = Math.ceil(getAverageVolume(barsType) / 10) * 10;
+
+       // Update d3 chart with new data.
+       svg.selectAll('rect')
+          .data(barsType)
+          .attr('y', function(d) {
+
+            if (barsType == timeData) {
+                 return svgHeight - d * 0.33;
+            } else {
+                return svgHeight - d * 0.75;
+            }
+          })
+          .attr('height', function(d) {
+
+             if (barsType == timeData) {
+                return d  * 0.33;
+            } else {
+                return d * 0.75;
+            }
+          });
+
+       // Pulsate the art
+      document.getElementById("album-art").style.webkitFilter = "blur(" + average / 6.666 + "px)";
+      document.getElementById("album-art").style.filter = "blur(" + average / 6.666 + "px)";
+    }
+
+    // Run the loop
+    renderChart();
+
+    // Change the frequency type
+    var frequencyBtn = document.getElementById("frequency-bars"),
+        waveformBtn = document.getElementById("waveform-bars");
+
+
+        frequencyBtn.addEventListener("click", function(){
+          barsType = frequencyData;
+        });
+
+        waveformBtn.addEventListener("click", function(){
+          barsType = timeData;
+        });
+    },
+    initializeSoundcloudSDK: function() {
+        // Initialize SDK
+        SC.initialize({
+           client_id: this.state.soundCloudId
+        });  
+    },
+    showSearch: function() {
+        this.setState({showSearch: true});
+    },
+    closeSearch: function() {
+        this.setState({showSearch: false});
+    },
+    showSettings: function() {
+        this.setState({showSettings: true});
+    },
+    closeSettings: function() {
+        this.setState({showSettings: false});
+    },
+    showFavorites: function() {
+        this.setState({showFavorites: true});
+    },
+    closeFavorites: function() {
+        this.setState({showFavorites: false});
+    },
+    showQueue: function() {
+        this.setState({showQueue: true});
+    },
+    closeQueue: function() {
+        this.setState({showQueue: false});
+    },
+    playSong: function(song, event) {
+        
+        this.setState({isPlaying: true});
+        
+         // Get a bigger image
+        var artworkUrl = song.artwork_url;
+        var artwork = artworkUrl ? artworkUrl.replace("large", "t500x500") : "https://s3-us-west-2.amazonaws.com/s.cdpn.io/166133/stratus-art.jpg";
+
+        // Apply the album art as the background image
+       document.getElementById("album-art").style.backgroundImage = "url('" + artwork + "')";
+       document.getElementById("thumbnail-art").style.backgroundImage = "url('" + artwork + "')";
+       
+        // Set title
+        document.getElementById("song-title").innerHTML = song.title;
+        document.getElementById("song-user").innerHTML = song.user.username;
+        
+        audioElement.src = song.stream_url + "?client_id=" + this.state.soundCloudId;
+        audioElement.play();
+        
+        this.closeSearch();
+        
+        this.setState({currentSong: song});
+                console.log(song);
+        console.log(this.state.currentSong);
+
+    },
+    renderHomeScreen: function() {
+       if (!this.state.isPlaying) {
+           return (
+           <div style={{
+                        width: "100%",
+                        height: "100%",
+                        position: "absolute",
+                        top: 0, left: 0,
+                        zIndex: 10,
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        background: "rgba(0,0,0,0.5)"
+                    }}>
+                    <div style={{textAlign: "center"}}>
+                      <img style={{width: 50, margin: 20}} src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/166133/stratus_logo.svg" />
+                      <h1 style={{color: "#fff", textTransform: "uppercase", margin: "0px 0px 10px"}}>Welcome to MI Music.</h1>
+                      <h1 style={{color: "#aaa", fontSize: "1.2em", paddingTop: 0}}>Begin by searching for a song.</h1>
+                    </div>
+                 </div>
+          )
+       }
+    },
+    render: function() {
+        return (
+            <div id="app">
+                 {this.renderHomeScreen()}
+                 <Search active={this.state.showSearch} 
+                         show={this.showSearch} 
+                         close={this.closeSearch} 
+                         playSong={this.playSong} />
+                 <Player SCID={this.state.soundCloudID}/>
+                 <SettingsBox show={this.showSettings}
+                              hide={this.closeSettings}
+                              active={this.state.showSettings}/>
+                {/*<Favorites show={this.showFavorites}
+                            hide={this.closeFavorites}
+                            active={this.state.showFavorites}/>
+                 <Queue show={this.showQueue}
+                        hide={this.closeQueue}
+                        active={this.state.showQueue}/> */}
+                 <LoadingOverlay />
+            </div>
+        );
+    }
+});
+        
+var Search = React.createClass({
+    getInitialState: function() {
+      return {
+          value: "",
+          trackResults: []
+      };
+    },
+    handleChange: function(event) {
+      var newVal = event.target.value;
+      this.setState({value: newVal});
+        
+      // Check to see if search is present, otherwise close the search results
+      if ( newVal.length == 0 ) {
+         this.props.close();
+      } else {
+         this.doSearch();
+      } 
+    },
+    doSearch: function() {
+      var searchApp = this,
+          timer;
+        
+      // Show the overlay
+      this.props.show();
+        
+      clearTimeout(timer);
+      timer = setTimeout(function() {
+         // Make the search call then set track state
+         SC.get('/tracks', {
+           q: this.state.value,
+           limit: 50
+         }).then(function(tracks) {
+             searchApp.setState({trackResults: tracks});
+             $(".track-tile").velocity("stop");
+             $(".track-tile").velocity("transition.flipXIn", {stagger: 100});
+         });
+       }.bind(this), 1000);      
+    },
+    render: function() {
+        var inputValue = this.state.value,
+            trackResults = this.state.trackResults,
+            trackAmount = trackResults.length,
+            active = this.props.active ? "active" : "";
+        return (
+            <div id="search">
+                <div id="search-wrapper">
+                    <div id="main-logo"></div>
+                    <input id="search-input" className={active} placeholder="Type to search" value={inputValue} onFocus={this.handleChange} onChange={this.handleChange} />
+                </div>        
+                <div id="search-results" className={active}>
+                    <header>
+                        Showing {trackAmount} results for: {inputValue}
+                    </header>
+                    <div id="close-search" onClick={this.props.close}></div>
+                   {trackResults.map(function(track, i){
+                        var artURL = track.artwork_url ? track.artwork_url.replace("large", "t500x500") : "https://s3-us-west-2.amazonaws.com/s.cdpn.io/166133/stratus-art.jpg";
+                        return (
+                           <TrackTile key={i} title={track.title} username={track.user.username} onClick={this.props.playSong.bind(null, track)} artwork={artURL}/>
+                        );
+                    }.bind(this))}  
+                </div>
+            </div>
+        );
+    }
+});
+
+var TrackTile = React.createClass({
+    getInitialState: function() {
+      return {
+          active: false
+      }  
+    },
+    isActive: function() {
+        this.setState({active: true});
+    },
+    isNotActive: function() {
+        this.setState({active: false});
+    },
+    render: function() {
+        var classes = this.state.active ? "active tile-overlay" : "tile-overlay";
+      return (
+           <div className="track-tile" onClick={this.props.onClick} onMouseOver={this.isActive} onMouseLeave={this.isNotActive}>
+                <div className="info-block">
+                    <div className="album-art">
+                        <img src={this.props.artwork} />
+                        <div className={classes}>
+                            <a className="play">
+                            </a>
+                            <div className="toolbelt">
+                                <a className="add-to-favorites">
+                                    <img src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/166133/star.svg" />
+                                </a>
+                                <a className="add-to-queue">
+                                    <img src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/166133/queue.svg" />
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    <p className="title">{this.props.title}</p>
+                    <p className="user">{this.props.username}</p>
+                </div>
+            </div>
+      );
+    }
+})
+
+var Player = React.createClass({
+   render: function() {
+       return (
+          <div id="player">
+            <div id="album-art"></div>
+            <div id="graph"></div>
+            <audio id="audioElement"></audio>
+            <ControlBar />
+          </div>
+       );
+   } 
+});
+
+var LoadingOverlay = React.createClass({
+    render: function() {
+        return (
+            <div id="loading" style={{display: "flex", alignItems: "center", justifyContent: "center"}}>
+                <img src="http://jxnblk.com/loading/loading-bars.svg" />
+            </div>
+        );
+    }
+});
+
+var SettingsBox = React.createClass({
+    render: function() {
+        var active = this.props.active ? "active" : "";
+        return (
+             <div id="settings-wrapper" onMouseOver={this.props.show} onMouseLeave={this.props.hide}>
+              <div id="settings-button">
+              </div>
+
+              <div id="settings-drawer" className={active}>
+                  <h4><img src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/166133/gear-icon-white.svg" />Settings</h4>
+                  <ul className="visualizer-colors">
+                    <span className="title">Visualizer Color</span>
+                    <li id="white-freq-bars" data-color="#ffff">White</li>
+                    <li id="blue-freq-bars" data-color="#52B6D2">Blue</li>
+                    <li id="black-freq-bars" data-color="#000">Black</li>
+                  </ul>
+                  <ul className="visualizer-style">
+                    <span className="title">Visualizer Style</span>
+                    <li id="frequency-bars">Frequency</li>
+                    <li id="waveform-bars">Waveform</li>
+                  </ul>
+              </div>
+            </div>
+        );
+    }
+})
+      
+var Favorites = React.createClass({
+   render: function() {
+       var active = this.props.active ? "active" : "";
+       return (
+        <div id="favorites-wrapper" onMouseOver={this.props.show} onMouseLeave={this.props.hide}>
+            <div id="favorites-button">
+            </div>
+            <div id="favorites-drawer" className={active}>
+                 <h4><img src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/166133/star.svg" />Favorites</h4>
+                 <p>There are currently no songs in your favorites.</p>
+            </div>
+        </div>
+       );
+   } 
+});
+
+var Queue = React.createClass({
+   render: function() {
+       var active = this.props.active ? "active" : "";
+       return (
+        <div id="queue-wrapper" onMouseOver={this.props.show} onMouseLeave={this.props.hide}>
+            <div id="queue-button">
+            </div>
+            <div id="queue-drawer" className={active}>
+                 <h4><img src="https://s3-us-west-2.amazonaws.com/s.cdpn.io/166133/queue.svg" /> Queue</h4>
+                 <p>There are currently no songs in your queue.</p>
+            </div>
+        </div>
+       );
+   } 
+});
+       
+var ControlBar = React.createClass({
+   render: function() {
+       var active = this.props.active ? "active" : "";
+       return (
+           <div id="controls">
+              <a id="play"></a>
+              <a id="pause"></a>
+              <div id="current-time"></div>
+              <input id="seek" onchange="" type="range" />
+              <div id="duration"></div>
+              <div id="song-info">
+                <div id="song-title"></div>
+                <div id="song-user"></div>
+              </div>
+
+              <div id="thumbnail-art"></div>
+           </div>
+       );
+   } 
+});
+
+ReactDOM.render(
+    <App />,
+    document.getElementById('app-render')
+);
