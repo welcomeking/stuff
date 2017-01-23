@@ -173,7 +173,7 @@ body {
 }
 
 #main-logo {
-  background: url("https://s3-us-west-2.amazonaws.com/s.cdpn.io/166133/stratus_logo.svg") center center no-repeat #000;
+  background: url("../assets/images/dj1.svg") center center no-repeat #000;
   background-size: 40px;
   width: 60px;
   height: 60px;

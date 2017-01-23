@@ -3459,7 +3459,6 @@ html.boxed-layout .appWrapper.header-fixed.aside-static #header {
 
 #header .nav-right > li.toggle-right-sidebar > a,
 #header .nav-left > li.toggle-right-sidebar > a {
-  background-color: #493d55;
   line-height: 45px;
   padding: 0 15px;
 }
@@ -3629,7 +3628,7 @@ html.boxed-layout .appWrapper.header-fixed.aside-static #header {
     position: absolute !important;
   }
   .appWrapper.sidebar-xs #header .nav-right > li .dropdown-menu {
-    left: 0 !important;
+    
     right: 0 !important;
   }
   .appWrapper.sidebar-xs #header .nav-right > li .dropdown-menu.with-arrow:before,
@@ -3924,7 +3923,7 @@ html.boxed-layout .appWrapper.header-fixed.aside-static #header {
 
 #navigation .dropdown > ul {
   display: none;
-  background-color: rgba(0, 0, 0, 0.15);
+background-color: #10181e;
   list-style: none;
   padding: 5px 0;
 }
@@ -3944,6 +3943,7 @@ html.boxed-layout .appWrapper.header-fixed.aside-static #header {
 }
 
 #navigation .dropdown > ul li > a {
+  
   font-size: 12px;
   position: relative;
   display: block;
@@ -15548,7 +15548,7 @@ body {
   -webkit-font-smoothing: antialiased !important;
   -moz-osx-font-smoothing: grayscale !important;
   -ms-overflow-style: scrollbar;
-  background-color: #212121;
+  background-color: #000;
   color: #616f77;
 }
 
@@ -16044,6 +16044,7 @@ body a {
 }
 
 *[class*='bg-']:not(.bg-default):not(.bg-white):not(.bg-tr-white) .dropdown-menu > li > a {
+
   color: #585858 !important;
 }
 
